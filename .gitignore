@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+
+# Claude Code ローカル設定
+.claude/
+
+# 不要ファイル
+Untitled-1
+
+# 実行時に溜まる送信データ（子どもの作品＝リポジトリに入れない）
+submissions/
+*.log
+
+# 配布用zip
+*.zip

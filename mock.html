@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Q-BU スマホ操作モック</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --panel:rgba(255,255,255,.92); --border:rgba(11,15,24,.14);
+    --text:#0b0f18; --muted:rgba(11,15,24,.55); --shadow:0 12px 24px rgba(11,15,24,.1);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  canvas{display:block;touch-action:none}
+
+  .page{height:100vh;height:100dvh;display:flex;flex-direction:column}
+  .topHeader{position:sticky;top:0;z-index:10;padding:10px 12px;display:flex;align-items:center;
+    justify-content:space-between;gap:10px;background:var(--panel);border-bottom:1px solid var(--border);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+  .title{font-weight:1000;letter-spacing:.04em;font-size:18px}
+  .hbtn{appearance:none;cursor:pointer;border:1px solid var(--border);background:rgba(255,255,255,.92);
+    padding:10px 14px;border-radius:12px;font-weight:900;font-size:13px;line-height:1;color:inherit}
+  .hbtn.primary{background:rgba(16,185,129,.16)}
+  .hbtn:active{transform:scale(.98)}
+
+  .main{flex:1 1;position:relative;overflow:hidden}
+  #cv{position:absolute;inset:0;width:100%;height:100%}
+
+  /* 左上のHUD */
+  .hud{position:absolute;top:12px;left:12px;z-index:6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100% - 24px)}
+  .pill{border:1px solid var(--border);background:rgba(255,255,255,.7);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    padding:8px 12px;border-radius:999px;font-weight:900;font-size:13px;color:var(--muted)}
+  .seg{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:rgba(255,255,255,.7);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  .seg button{appearance:none;border:none;background:transparent;padding:9px 16px;font-weight:1000;font-size:13px;cursor:pointer;color:var(--muted)}
+  .seg button.on{background:rgba(11,15,24,.08);color:var(--text)}
+  .seg button.on.make{background:rgba(59,130,246,.18);color:#1d4ed8}
+  .seg button.on.erase{background:rgba(244,63,94,.18);color:#be123c}
+  .miniToggle{appearance:none;cursor:pointer;border:1px solid var(--border);background:rgba(255,255,255,.7);
+    padding:8px 12px;border-radius:999px;font-weight:900;font-size:13px;color:var(--muted)}
+  .miniToggle.on{background:rgba(11,15,24,.08);color:var(--text)}
+  .hudLink{appearance:none;border:none;background:transparent;font-size:13px;font-weight:900;
+    color:var(--muted);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:6px}
+
+  /* 視点ボタン（三角） */
+  .overlay{position:absolute;inset:0;pointer-events:none;z-index:5}
+  .triBtn{--t:none;pointer-events:auto;position:absolute;width:64px;height:64px;border-radius:16px;
+    border:1px solid var(--border);background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    display:grid;place-items:center;cursor:pointer;transform:var(--t);box-shadow:var(--shadow)}
+  .triBtn:active{transform:var(--t) scale(.96)}
+  .tri{width:0;height:0;border-style:solid;filter:drop-shadow(0 8px 16px rgba(11,15,24,.12))}
+  .tri.left{border-width:16px 24px 16px 0;border-color:transparent rgba(59,130,246,.9) transparent transparent}
+  .tri.right{border-width:16px 0 16px 24px;border-color:transparent transparent transparent rgba(59,130,246,.9)}
+  .tri.down{border-width:24px 16px 0;border-color:rgba(244,63,94,.9) transparent transparent}
+  .posLeft{left:12px;top:50%;--t:translateY(-50%)}
+  .posRight{right:12px;top:50%;--t:translateY(-50%)}
+  .posDown{left:50%;bottom:14px;--t:translateX(-50%)}
+  .topViewBtn{pointer-events:auto;position:absolute;left:50%;top:12px;transform:translateX(-50%);
+    border:1px solid var(--border);background:rgba(255,255,255,.92);border-radius:14px;padding:10px 14px;
+    font-weight:900;font-size:13px;cursor:pointer;box-shadow:var(--shadow)}
+  .topViewBtn:active{transform:translateX(-50%) scale(.97)}
+  .zoomStack{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;pointer-events:auto}
+  .zoomBtn{width:48px;height:48px;border-radius:14px;border:1px solid var(--border);background:rgba(255,255,255,.92);
+    font-size:22px;font-weight:900;display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow)}
+  .zoomBtn:active{transform:scale(.96)}
+
+  .hint{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);z-index:6;pointer-events:none;
+    font-size:12px;font-weight:800;color:var(--muted);background:rgba(255,255,255,.78);border:1px solid var(--border);
+    border-radius:12px;padding:7px 12px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);white-space:nowrap}
+
+  /* プレビュー中はエディタUIを隠す */
+  body.previewing .hud,body.previewing .triBtn,body.previewing .topViewBtn,body.previewing .hint{display:none}
+
+  /* 完了オーバーレイ */
+  .doneOverlay{position:fixed;inset:0;z-index:50;background:rgba(11,15,24,.34);display:none;place-items:center;padding:18px}
+  .doneOverlay.show{display:grid}
+  .doneCard{width:min(380px,92vw);border-radius:18px;background:#fff;border:1px solid var(--border);
+    box-shadow:0 24px 46px rgba(11,15,24,.18);padding:22px;text-align:center}
+  .doneEmoji{font-size:46px}
+  .doneTitle{font-size:22px;font-weight:1000;margin-top:6px}
+  .doneId{margin-top:10px;font-size:14px;font-weight:900;color:var(--muted)}
+  .doneId b{color:var(--text);font-size:18px}
+  .doneSub{margin-top:8px;font-size:13px;color:var(--muted);font-weight:700;line-height:1.5}
+  .doneBtn{margin-top:16px;appearance:none;border:1px solid var(--border);background:rgba(16,185,129,.16);
+    border-radius:12px;padding:12px 18px;font-weight:1000;font-size:14px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="topHeader">
+    <div class="title">Q-BU <span style="font-weight:700;font-size:12px;color:var(--muted)">スマホ操作モック</span></div>
+    <button class="hbtn primary" id="sendBtn">送信</button>
+  </header>
+  <div class="main">
+    <canvas id="cv"></canvas>
+
+    <div class="hud">
+      <span class="pill">ブロック: <span id="count">0</span></span>
+      <div class="seg" role="group" aria-label="モード">
+        <button id="modeMake" class="on make">つくる</button>
+        <button id="modeErase">けす</button>
+      </div>
+      <button class="miniToggle on" id="edgeBtn">エッジ</button>
+      <button class="hudLink" id="previewBtn">プレビュー</button>
+      <button class="hudLink" id="resetBtn">リセット</button>
+    </div>
+
+    <div class="overlay">
+      <button class="topViewBtn" id="topBtn" title="上から見る">上から</button>
+      <button class="triBtn posLeft" id="rotL" title="左へ回す"><span class="tri left"></span></button>
+      <button class="triBtn posRight" id="rotR" title="右へ回す"><span class="tri right"></span></button>
+      <button class="triBtn posDown" id="rotDown" title="下から見る"><span class="tri down"></span></button>
+      <div class="zoomStack">
+        <button class="zoomBtn" id="zoomIn">＋</button>
+        <button class="zoomBtn" id="zoomOut">－</button>
+      </div>
+    </div>
+
+    <div class="hint" id="hint">面をタップ＝置く ／ 1本指ドラッグ＝回す ／ 2本指＝ズーム</div>
+  </div>
+</div>
+
+<div class="doneOverlay" id="doneOverlay">
+  <div class="doneCard">
+    <div class="doneEmoji">🎉</div>
+    <div class="doneTitle">できた！</div>
+    <div class="doneId">きみのばんごう：<b id="doneId">A-0000</b></div>
+    <div class="doneSub">せんせいに ばんごうを つたえてね。<br>あとで プリントして わたすよ！</div>
+    <button class="doneBtn" id="newBtn">あたらしく つくる</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ============================================================
+// CONFIG = 拡張の switchboard（B2B/ホワイトラベル/機能ゲートの土台）
+//   ※ これは「元」。フラグは今は最小。機能の実装は別途（拡張性設計.md 参照）
+// ============================================================
+const CONFIG = {
+  branding: { title: "Q-BU", accent: "#10b981" },  // テーマはCSS変数 + ここ
+  palette: ["#9AA0A6"],          // 複数色 → この配列を増やすだけ
+  features: {                    // 機能フラグ（今は最小。trueにして実装を足す）
+    multiColor: false, textures: false, background: false,
+    ar: false, posting: false, coding: false, gallery: false,
+    undo: false, selectRegion: false
+  },
+  limits: { maxBlocks: 100000, bounds: [100, 100, 100] },
+  tenant: "default", event: "default"   // B2B: 顧客/イベント単位
+};
+
+const BG = 0xf7f8fb;
+const CELL = 1;
+
+// ---- 基本セットアップ ----
+const canvas = document.getElementById('cv');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setClearColor(BG, 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(BG, 30, 80);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
+camera.position.set(7, 7, 9);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.12;
+controls.enablePan = false;
+controls.minDistance = 4;
+controls.maxDistance = 40;
+controls.target.set(0.5, 0.5, 0.5);
+
+// ---- ライト（影＝プレビューの陰影） ----
+scene.add(new THREE.HemisphereLight(0xffffff, 0xdfe4ec, 0.85));
+const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+dir.position.set(6, 12, 8);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048, 2048);
+const s = 24;
+dir.shadow.camera.left=-s; dir.shadow.camera.right=s; dir.shadow.camera.top=s; dir.shadow.camera.bottom=-s;
+dir.shadow.camera.near=1; dir.shadow.camera.far=60;
+dir.shadow.bias=-0.0005;
+scene.add(dir);
+
+// ---- 地面（影うけ＋レイキャスト用）とグリッド ----
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(400, 400),
+  new THREE.ShadowMaterial({ opacity:0.16 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.5;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(100, 100, 0xc7cdd6, 0xe2e6ec);
+grid.position.y = -0.499;
+scene.add(grid);
+
+// ---- ボクセル管理 ----
+// ★seam: この cubesGroup（ボクセル→メッシュ）が、将来 STL / GLB / AR / サムネ の
+//   共通の元になる。書き出しは「ここを読む」1本に集約する設計（拡張性設計.md ③）
+const cubesGroup = new THREE.Group();
+scene.add(cubesGroup);
+const boxGeo = new THREE.BoxGeometry(0.98, 0.98, 0.98);
+const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+const edgeMat = new THREE.LineBasicMaterial({ color:0x0b0f18, transparent:true, opacity:0.22 });
+const occ = new Map();
+let meshes = [];
+let edgesOn = true;
+const countEl = document.getElementById('count');
+
+function key(x,y,z){ return x+','+y+','+z; }
+function addVoxel(x,y,z){
+  if (y < 0) return;
+  const k = key(x,y,z);
+  if (occ.has(k)) return;
+  const mat = new THREE.MeshStandardMaterial({ color:CONFIG.palette[0], roughness:0.85, metalness:0.0 });
+  const m = new THREE.Mesh(boxGeo, mat);
+  m.position.set(x,y,z);
+  m.castShadow = true; m.receiveShadow = true;
+  m.userData.k = k;
+  const e = new THREE.LineSegments(edgeGeo, edgeMat);
+  e.visible = edgesOn;
+  m.add(e); m.userData.edge = e;
+  cubesGroup.add(m); occ.set(k,m); meshes.push(m);
+  updateCount();
+}
+function removeVoxel(m){
+  occ.delete(m.userData.k);
+  cubesGroup.remove(m);
+  m.material.dispose();
+  meshes = meshes.filter(x=>x!==m);
+  updateCount();
+}
+function updateCount(){ countEl.textContent = meshes.length; }
+function clearAll(){ [...meshes].forEach(removeVoxel); }
+function seed(){
+  clearAll();
+  [[0,0,0],[1,0,0],[0,0,1],[0,1,0]].forEach(p=>addVoxel(p[0],p[1],p[2]));
+  recenter();
+}
+function recenter(){
+  if (!meshes.length) { controls.target.set(0.5,0.5,0.5); return; }
+  const c = new THREE.Vector3();
+  meshes.forEach(m=>c.add(m.position));
+  c.multiplyScalar(1/meshes.length);
+  controls.target.lerp(c, 0.5);
+}
+
+// ---- タップ判定（OrbitControlsと共存）----
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let mode = 'make';
+let active = 0, multi = false, moved = false, sx = 0, sy = 0;
+
+canvas.addEventListener('pointerdown', e=>{
+  active++;
+  if (active > 1) { multi = true; return; }
+  multi = false; moved = false; sx = e.clientX; sy = e.clientY;
+});
+canvas.addEventListener('pointermove', e=>{
+  if (active === 1 && (Math.abs(e.clientX-sx) > 8 || Math.abs(e.clientY-sy) > 8)) moved = true;
+});
+canvas.addEventListener('pointerup', e=>{
+  active = Math.max(0, active-1);
+  if (active === 0){
+    if (!moved && !multi) onTap(e.clientX, e.clientY);
+    multi = false;
+  }
+});
+
+function onTap(cx, cy){
+  const r = canvas.getBoundingClientRect();
+  ndc.x = ((cx - r.left)/r.width)*2 - 1;
+  ndc.y = -((cy - r.top)/r.height)*2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects([ground, ...meshes], false);
+  if (!hits.length) return;
+  const h = hits[0];
+  if (mode === 'make'){
+    if (h.object === ground){
+      addVoxel(Math.round(h.point.x), 0, Math.round(h.point.z));
+    } else {
+      const n = h.face.normal;
+      const p = h.object.position;
+      addVoxel(p.x+Math.round(n.x), p.y+Math.round(n.y), p.z+Math.round(n.z));
+    }
+  } else {
+    if (h.object !== ground) removeVoxel(h.object);
+  }
+}
+
+// ---- 視点ボタン ----
+function rotateView(deg){
+  const a = deg*Math.PI/180;
+  const o = camera.position.clone().sub(controls.target);
+  const x = o.x*Math.cos(a) - o.z*Math.sin(a);
+  const z = o.x*Math.sin(a) + o.z*Math.cos(a);
+  o.x = x; o.z = z;
+  camera.position.copy(controls.target).add(o);
+  controls.update();
+}
+function topView(){
+  const d = camera.position.distanceTo(controls.target);
+  camera.position.set(controls.target.x, controls.target.y + d, controls.target.z + 0.001);
+  controls.update();
+}
+function bottomView(){
+  const d = camera.position.distanceTo(controls.target);
+  camera.position.set(controls.target.x, controls.target.y - d*0.6, controls.target.z + d*0.8);
+  controls.update();
+}
+function zoom(f){
+  const o = camera.position.clone().sub(controls.target).multiplyScalar(f);
+  const len = THREE.MathUtils.clamp(o.length(), controls.minDistance, controls.maxDistance);
+  o.setLength(len);
+  camera.position.copy(controls.target).add(o);
+  controls.update();
+}
+
+document.getElementById('rotL').onclick = ()=>rotateView(-45);
+document.getElementById('rotR').onclick = ()=>rotateView(45);
+document.getElementById('rotDown').onclick = bottomView;
+document.getElementById('topBtn').onclick = topView;
+document.getElementById('zoomIn').onclick = ()=>zoom(0.82);
+document.getElementById('zoomOut').onclick = ()=>zoom(1.20);
+
+// ---- モード・トグル類 ----
+const modeMake = document.getElementById('modeMake');
+const modeErase = document.getElementById('modeErase');
+modeMake.onclick = ()=>{ mode='make'; modeMake.className='on make'; modeErase.className=''; };
+modeErase.onclick = ()=>{ mode='erase'; modeErase.className='on erase'; modeMake.className=''; };
+
+const edgeBtn = document.getElementById('edgeBtn');
+edgeBtn.onclick = ()=>{ edgesOn=!edgesOn; edgeBtn.classList.toggle('on',edgesOn);
+  meshes.forEach(m=>m.userData.edge.visible=edgesOn); };
+
+const previewBtn = document.getElementById('previewBtn');
+previewBtn.onclick = ()=>{ const on=document.body.classList.toggle('previewing');
+  grid.visible=!on; previewBtn.textContent = on?'もどる':'プレビュー'; };
+
+document.getElementById('resetBtn').onclick = ()=>{ if(confirm('ぜんぶ消して最初からにする？')) seed(); };
+
+// ---- 送信・完了 ----
+// ---- 識別ID（localStorageで保持＝再接続でも消えない）----
+function getId(){
+  let id = localStorage.getItem('qbu_id');
+  if (!id){ id = 'A-' + String(Math.floor(1000+Math.random()*9000)); localStorage.setItem('qbu_id', id); }
+  return id;
+}
+function newId(){ const id = 'A-' + String(Math.floor(1000+Math.random()*9000)); localStorage.setItem('qbu_id', id); return id; }
+
+// ---- 送信ペイロード = 前方互換のJSON envelope（拡張の土台。詳細は 拡張性設計.md）----
+function buildPayload(){
+  return {
+    schema: "qbu.creation/1",
+    meta: {
+      appVersion: "0.1.0",
+      tenant: CONFIG.tenant,
+      event:  CONFIG.event,
+      mode:   "model",                // 将来: paint / code ...
+      createdAt: new Date().toISOString()
+    },
+    creator: { id: getId(), name: "" },
+    model: {
+      unit:   CELL,
+      bounds: CONFIG.limits.bounds,
+      // 各ブロックは「見た目」を持てる構造（将来: material / texture / shape を追加）
+      blocks: meshes.map(m=>({ x:m.position.x, y:m.position.y, z:m.position.z, color: CONFIG.palette[0] }))
+    },
+    ext: {}                           // 将来機能の自由枠（未知フィールドはホストが保持）
+  };
+}
+
+const doneOverlay = document.getElementById('doneOverlay');
+const sendBtn = document.getElementById('sendBtn');
+sendBtn.onclick = async ()=>{
+  if (meshes.length === 0){ alert('ブロックがないよ！なにか置いてね。'); return; }
+  sendBtn.disabled = true; sendBtn.textContent = '送信中…';
+  try{
+    const res = await fetch('/submit', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify(buildPayload())
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    await res.json();
+    document.getElementById('doneId').textContent = getId();
+    doneOverlay.classList.add('show');
+  }catch(err){
+    // 60台Wi-Fi対策の簡易リトライ：失敗してももう一度押せばOK（作品は消えない）
+    alert('送信できなかったみたい💦 もう一回「送信」を押してね。\n(' + err.message + ')');
+  }finally{
+    sendBtn.disabled = false; sendBtn.textContent = '送信';
+  }
+};
+document.getElementById('newBtn').onclick = ()=>{ doneOverlay.classList.remove('show'); newId(); seed(); };
+
+// ---- ループ・リサイズ ----
+function resize(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w*renderer.getPixelRatio() || canvas.height !== h*renderer.getPixelRatio()){
+    renderer.setSize(w, h, false);
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+  }
+}
+function loop(){
+  resize();
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+seed();
+loop();
+</script>
+</body>
+</html>
