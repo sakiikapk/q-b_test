@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="104" fill="#10b981"/>
+  <!-- アイソメ立方体（ボクセル＝このアプリの世界観） -->
+  <g transform="translate(256 268)">
+    <polygon points="0,-120 130,-45 0,30 -130,-45" fill="#ffffff"/>
+    <polygon points="-130,-45 0,30 0,170 -130,95" fill="#d7f5e8"/>
+    <polygon points="130,-45 0,30 0,170 130,95" fill="#a7e8cf"/>
+  </g>
+</svg>

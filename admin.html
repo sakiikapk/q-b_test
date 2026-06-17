@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Q-BU 先生用（QR表示）</title>
+<style>
+  :root{ --bg:#f7f8fb; --text:#0b0f18; --muted:rgba(11,15,24,.55);
+         --border:rgba(11,15,24,.14); --accent:#10b981; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;}
+  .wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:20px;padding:28px;text-align:center}
+  h1{margin:0;font-size:26px;font-weight:1000;letter-spacing:.04em}
+  .lead{margin:0;color:var(--muted);font-weight:800;font-size:15px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:24px;
+    box-shadow:0 18px 40px rgba(11,15,24,.12);padding:26px;display:flex;
+    flex-direction:column;align-items:center;gap:16px;max-width:min(520px,92vw)}
+  #qr{width:min(60vw,360px);height:min(60vw,360px);display:grid;place-items:center}
+  #qr svg{width:100%;height:100%}
+  .url{font-size:clamp(16px,3.4vw,24px);font-weight:1000;color:var(--text);
+    word-break:break-all;background:rgba(16,185,129,.10);border:1px solid var(--border);
+    border-radius:14px;padding:12px 16px}
+  .note{color:var(--muted);font-weight:800;font-size:14px;line-height:1.6}
+  .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  button{appearance:none;cursor:pointer;border:1px solid var(--border);
+    background:rgba(255,255,255,.95);padding:12px 18px;border-radius:14px;
+    font-weight:1000;font-size:14px;color:inherit}
+  button.primary{background:rgba(16,185,129,.16)}
+  button:active{transform:scale(.98)}
+  .err{color:#be123c;font-weight:900}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Q-BU</h1>
+  <p class="lead">この画面を子どもに見せて、QRを読んでもらってね</p>
+  <div class="card">
+    <div id="qr"><span class="note">読み込み中…</span></div>
+    <div class="url" id="url">―</div>
+    <p class="note">QRが読めないときは、上のアドレスを<br>ブラウザに直接入力してもOK</p>
+    <div class="row">
+      <button class="primary" id="open">このMacでアプリを開く</button>
+      <button id="reload">QRを更新</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR生成（ローカル同梱＝ネット不要） -->
+<script src="./vendor/qrcode.js"></script>
+<script>
+const qrEl = document.getElementById('qr');
+const urlEl = document.getElementById('url');
+let appUrl = '';
+
+async function load(){
+  qrEl.innerHTML = '<span class="note">読み込み中…</span>';
+  try{
+    const res = await fetch('/lan', { cache:'no-store' });
+    const info = await res.json();
+    appUrl = info.appUrl;
+    urlEl.textContent = appUrl;
+    // QRを描画（誤り訂正レベル M / サイズ自動）
+    const qr = qrcode(0, 'M');
+    qr.addData(appUrl);
+    qr.make();
+    qrEl.innerHTML = qr.createSvgTag({ scalable:true });
+  }catch(err){
+    urlEl.textContent = '―';
+    qrEl.innerHTML = '<span class="err">アドレス取得に失敗しました。host.py が動いているか確認してね。</span>';
+  }
+}
+
+document.getElementById('open').onclick = ()=>{ if(appUrl) window.open(appUrl, '_blank'); };
+document.getElementById('reload').onclick = load;
+load();
+</script>
+</body>
+</html>

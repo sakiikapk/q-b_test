@@ -4,6 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
 <title>Q-BU スマホ操作モック</title>
+<!-- ホーム画面に追加＝全画面アプリ風（iPhone向け）。ネット不要・ローカル完結 -->
+<link rel="manifest" href="./manifest.json" />
+<link rel="apple-touch-icon" href="./icon.svg" />
+<link rel="icon" href="./icon.svg" />
+<meta name="theme-color" content="#10b981" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Q-BU" />
 <style>
   :root{
     --bg:#f7f8fb; --panel:rgba(255,255,255,.92); --border:rgba(11,15,24,.14);
@@ -71,6 +80,12 @@
 
   /* プレビュー中はエディタUIを隠す */
   body.previewing .hud,body.previewing .triBtn,body.previewing .topViewBtn,body.previewing .hint{display:none}
+  /* プレビュー中だけ出る「もどる」ボタン（HUDの外＝隠れない） */
+  .previewBack{display:none;position:absolute;top:12px;left:12px;z-index:8;appearance:none;cursor:pointer;
+    border:1px solid var(--border);background:rgba(255,255,255,.95);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    padding:12px 18px;border-radius:14px;font-weight:1000;font-size:15px;color:inherit;box-shadow:var(--shadow)}
+  body.previewing .previewBack{display:block}
+  .previewBack:active{transform:scale(.97)}
 
   /* 完了オーバーレイ */
   .doneOverlay{position:fixed;inset:0;z-index:50;background:rgba(11,15,24,.34);display:none;place-items:center;padding:18px}
@@ -82,8 +97,6 @@
   .doneId{margin-top:10px;font-size:14px;font-weight:900;color:var(--muted)}
   .doneId b{color:var(--text);font-size:18px}
   .doneSub{margin-top:8px;font-size:13px;color:var(--muted);font-weight:700;line-height:1.5}
-  .doneBtn{margin-top:16px;appearance:none;border:1px solid var(--border);background:rgba(16,185,129,.16);
-    border-radius:12px;padding:12px 18px;font-weight:1000;font-size:14px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -118,23 +131,23 @@
     </div>
 
     <div class="hint" id="hint">面をタップ＝置く ／ 1本指ドラッグ＝回す ／ 2本指＝ズーム</div>
+    <button class="previewBack" id="previewBack">← もどる</button>
   </div>
 </div>
 
 <div class="doneOverlay" id="doneOverlay">
   <div class="doneCard">
     <div class="doneEmoji">🎉</div>
-    <div class="doneTitle">できた！</div>
+    <div class="doneTitle">そうしん できたよ！</div>
     <div class="doneId">きみのばんごう：<b id="doneId">A-0000</b></div>
-    <div class="doneSub">せんせいに ばんごうを つたえてね。<br>あとで プリントして わたすよ！</div>
-    <button class="doneBtn" id="newBtn">あたらしく つくる</button>
+    <div class="doneSub">ありがとう！<br>せんせいに ばんごうを つたえてね。<br>あとで プリントして わたすよ。</div>
   </div>
 </div>
 
 <script type="importmap">
 { "imports": {
-  "three": "https://unpkg.com/three@0.162.0/build/three.module.js",
-  "three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/"
 }}
 </script>
 <script type="module">
@@ -282,6 +295,7 @@ canvas.addEventListener('pointerup', e=>{
 });
 
 function onTap(cx, cy){
+  if (document.body.classList.contains('previewing')) return;   // プレビュー中は「見るだけ」＝置けない・消せない
   const r = canvas.getBoundingClientRect();
   ndc.x = ((cx - r.left)/r.width)*2 - 1;
   ndc.y = -((cy - r.top)/r.height)*2 + 1;
@@ -348,8 +362,13 @@ edgeBtn.onclick = ()=>{ edgesOn=!edgesOn; edgeBtn.classList.toggle('on',edgesOn)
   meshes.forEach(m=>m.userData.edge.visible=edgesOn); };
 
 const previewBtn = document.getElementById('previewBtn');
-previewBtn.onclick = ()=>{ const on=document.body.classList.toggle('previewing');
-  grid.visible=!on; previewBtn.textContent = on?'もどる':'プレビュー'; };
+function setPreview(on){
+  document.body.classList.toggle('previewing', on);
+  grid.visible = !on;
+  previewBtn.textContent = on ? 'もどる' : 'プレビュー';
+}
+previewBtn.onclick = ()=> setPreview(!document.body.classList.contains('previewing'));
+document.getElementById('previewBack').onclick = ()=> setPreview(false);
 
 document.getElementById('resetBtn').onclick = ()=>{ if(confirm('ぜんぶ消して最初からにする？')) seed(); };
 
@@ -360,7 +379,6 @@ function getId(){
   if (!id){ id = 'A-' + String(Math.floor(1000+Math.random()*9000)); localStorage.setItem('qbu_id', id); }
   return id;
 }
-function newId(){ const id = 'A-' + String(Math.floor(1000+Math.random()*9000)); localStorage.setItem('qbu_id', id); return id; }
 
 // ---- 送信ペイロード = 前方互換のJSON envelope（拡張の土台。詳細は 拡張性設計.md）----
 function buildPayload(){
@@ -398,7 +416,7 @@ sendBtn.onclick = async ()=>{
     if (!res.ok) throw new Error('HTTP ' + res.status);
     await res.json();
     document.getElementById('doneId').textContent = getId();
-    doneOverlay.classList.add('show');
+    doneOverlay.classList.add('show');   // 完了画面でフリーズ（次の子はページを再読み込みして開始）
   }catch(err){
     // 60台Wi-Fi対策の簡易リトライ：失敗してももう一度押せばOK（作品は消えない）
     alert('送信できなかったみたい💦 もう一回「送信」を押してね。\n(' + err.message + ')');
@@ -406,7 +424,6 @@ sendBtn.onclick = async ()=>{
     sendBtn.disabled = false; sendBtn.textContent = '送信';
   }
 };
-document.getElementById('newBtn').onclick = ()=>{ doneOverlay.classList.remove('show'); newId(); seed(); };
 
 // ---- ループ・リサイズ ----
 function resize(){

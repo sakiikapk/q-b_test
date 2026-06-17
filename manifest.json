@@ -1,0 +1,13 @@
+{
+  "name": "Q-BU",
+  "short_name": "Q-BU",
+  "description": "ブロックを並べて3Dモデルをつくろう",
+  "start_url": "./mock.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f8fb",
+  "theme_color": "#10b981",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
