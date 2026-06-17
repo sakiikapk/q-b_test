@@ -44,6 +44,11 @@
       <button class="primary" id="open">このMacでアプリを開く</button>
       <button id="reload">QRを更新</button>
     </div>
+    <p class="note" id="certNote" style="display:none">
+      📷 <b>カメラAR（マーカー）を使う子へ</b><br>
+      最初に証明書のインストールが必要：<a id="certLink" href="#">証明書をひらく</a><br>
+      <span style="font-size:11px">導入後 → 設定&gt;一般&gt;情報&gt;証明書信頼設定 で信頼をON</span>
+    </p>
   </div>
 </div>
 
@@ -66,6 +71,13 @@ async function load(){
     qr.addData(appUrl);
     qr.make();
     qrEl.innerHTML = qr.createSvgTag({ scalable:true });
+    // https配信時だけ、証明書インストール導線を出す（カメラAR用）
+    if (info.scheme === 'https'){
+      const certUrl = info.scheme + '://' + info.ip + ':' + info.port + '/cert.pem';
+      const link = document.getElementById('certLink');
+      link.href = certUrl; link.textContent = certUrl;
+      document.getElementById('certNote').style.display = 'block';
+    }
   }catch(err){
     urlEl.textContent = '―';
     qrEl.innerHTML = '<span class="err">アドレス取得に失敗しました。host.py が動いているか確認してね。</span>';

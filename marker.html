@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Q-BU ARマーカー（印刷用）</title>
+<style>
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#0b0f18;
+    display:flex;flex-direction:column;align-items:center;padding:24px;text-align:center}
+  h1{font-size:20px;margin:0 0 4px}
+  p{color:#5b6472;font-weight:700;margin:4px 0 20px;line-height:1.6}
+  .marker{width:10cm;height:10cm;max-width:90vw}
+  .marker img{width:100%;height:100%;display:block;image-rendering:pixelated}
+  button{margin-top:22px;border:0;border-radius:12px;background:#10b981;color:#fff;
+    font-weight:1000;font-size:15px;padding:13px 22px;cursor:pointer}
+  @media print{ .noprint{display:none} body{padding:0} .marker{width:10cm;height:10cm} }
+</style>
+</head>
+<body>
+  <h1 class="noprint">Q-BU AR マーカー</h1>
+  <p class="noprint">この「Hiroマーカー」を印刷して、平らな所に置いてね。<br>
+    AR画面でこれをカメラに写すと、作品があらわれます。<br>
+    <b>白いフチごと</b>印刷するのがコツ（約10cm四方）。</p>
+  <div class="marker"><img src="./vendor/arjs/hiro.jpg" alt="Hiroマーカー" /></div>
+  <button class="noprint" onclick="window.print()">🖨 印刷する</button>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Q-BU AR（マーカー）</title>
+<style>
+  :root{ --border:rgba(255,255,255,.5); --accent:#10b981; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;
+    font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;-webkit-user-select:none;user-select:none}
+  /* 上部UI */
+  .top{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:8px;
+    padding:10px 12px;pointer-events:none}
+  .top > *{pointer-events:auto}
+  .btn{appearance:none;cursor:pointer;border:none;border-radius:12px;padding:11px 15px;font-weight:1000;
+    font-size:14px;color:#0b0f18;background:rgba(255,255,255,.92);box-shadow:0 6px 16px rgba(0,0,0,.3)}
+  .btn:active{transform:scale(.97)}
+  .pill{margin-left:auto;background:rgba(0,0,0,.55);color:#fff;border-radius:999px;padding:9px 14px;
+    font-weight:900;font-size:13px}
+  .seg{display:flex;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.92);box-shadow:0 6px 16px rgba(0,0,0,.3)}
+  .seg button{appearance:none;border:none;background:transparent;padding:11px 16px;font-weight:1000;font-size:14px;cursor:pointer;color:#5b6472}
+  .seg button.on.make{background:rgba(59,130,246,.22);color:#1d4ed8}
+  .seg button.on.erase{background:rgba(244,63,94,.22);color:#be123c}
+  /* マーカー案内 */
+  #guide{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:10;
+    background:rgba(0,0,0,.6);color:#fff;border-radius:14px;padding:12px 18px;font-weight:800;font-size:14px;
+    text-align:center;line-height:1.5;max-width:90vw}
+  #guide.hide{display:none}
+  /* AR.jsが作るvideo/canvasを画面いっぱいに */
+  .a-canvas, video, .arjs-video{position:fixed!important;top:0;left:0;width:100%!important;height:100%!important;object-fit:cover}
+</style>
+<script src="./vendor/arjs/aframe.min.js"></script>
+<script src="./vendor/arjs/aframe-ar.js"></script>
+</head>
+<body>
+  <div class="top">
+    <button class="btn" id="back">← もどる</button>
+    <div class="seg" role="group">
+      <button id="mMake" class="on make">つくる</button>
+      <button id="mErase">けす</button>
+    </div>
+    <span class="pill">ブロック <span id="count">0</span></span>
+  </div>
+
+  <div id="guide">マーカーを カメラに うつしてね 🟦<br>うつると 作品が あらわれるよ</div>
+
+  <a-scene embedded vr-mode-ui="enabled: false" renderer="antialias: true; alpha: true; precision: medium"
+    arjs="sourceType: webcam; detectionMode: mono; debugUIEnabled: false; cameraParametersUrl: ./vendor/arjs/camera_para.dat;">
+    <a-marker id="marker" type="pattern" url="./vendor/arjs/patt.hiro" smooth="true" smoothCount="6" smoothTolerance="0.01" smoothThreshold="3">
+      <a-entity id="root"></a-entity>
+    </a-marker>
+    <a-entity camera></a-entity>
+  </a-scene>
+
+<script>
+  const THREE = AFRAME.THREE;
+  const sceneEl = document.querySelector('a-scene');
+  const markerEl = document.querySelector('#marker');
+  const rootEl = document.querySelector('#root');
+  const countEl = document.getElementById('count');
+  const guide = document.getElementById('guide');
+
+  const CUBE = 1;                 // ローカル(グリッド)単位。最後にrootを拡縮してマーカーに収める
+  const COLOR = 0x9AA0A6;
+  let mode = 'make';
+
+  // マーカー空間に置く描画ツリー
+  let root = null, build = null, ground = null;
+  let meshes = [];                // 立方体メッシュ
+  const occ = new Map();          // "x,y,z" -> mesh（重複・削除用）
+  let blocks = [];                // {x,y,z} の配列（保存用の真実）
+
+  const boxGeo = new THREE.BoxGeometry(0.98, 0.98, 0.98);
+  const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+  const edgeMat = new THREE.LineBasicMaterial({ color:0x0b0f18, transparent:true, opacity:0.25 });
+  const key = (x,y,z)=> x+','+y+','+z;
+
+  sceneEl.addEventListener('loaded', ()=>{
+    root = rootEl.object3D;
+    build = new THREE.Group();          // ここにキューブ。位置/スケールでマーカーに合わせる
+    root.add(build);
+    // ライト（AR.jsはライトを足さないので自前で）
+    root.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(2,4,3); root.add(dir);
+    // タップ用の床（不可視でもraycastは当たる）
+    ground = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshBasicMaterial({visible:false}));
+    ground.rotation.x = -Math.PI/2; build.add(ground);
+
+    loadBlocks();
+    rebuild();
+  });
+
+  markerEl.addEventListener('markerFound', ()=> guide.classList.add('hide'));
+  markerEl.addEventListener('markerLost',  ()=> guide.classList.remove('hide'));
+
+  // ---- データ ----
+  function loadBlocks(){
+    try{ blocks = JSON.parse(localStorage.getItem('qbu_blocks') || '[]'); }catch(_){ blocks = []; }
+    if (!Array.isArray(blocks)) blocks = [];
+  }
+  function saveBlocks(){
+    try{ localStorage.setItem('qbu_blocks', JSON.stringify(blocks)); }catch(_){}
+  }
+
+  // ---- 描画（blocks → meshes）＋ マーカーに収まる位置・スケール ----
+  function rebuild(){
+    meshes.forEach(m=>{ build.remove(m); m.material.dispose(); });
+    meshes = []; occ.clear();
+    blocks.forEach(b=> addMesh(b.x, b.y, b.z));
+    fit();
+    updateCount();
+  }
+  function addMesh(x,y,z){
+    const mat = new THREE.MeshStandardMaterial({ color:COLOR, roughness:0.85 });
+    const m = new THREE.Mesh(boxGeo, mat);
+    m.position.set(x,y,z);
+    m.add(new THREE.LineSegments(edgeGeo, edgeMat));
+    build.add(m); meshes.push(m); occ.set(key(x,y,z), m);
+    return m;
+  }
+  // 作品を中心化＆マーカーサイズに拡縮（buildのposition/scaleで調整）
+  function fit(){
+    if (!blocks.length){ build.scale.setScalar(0.5); build.position.set(0,0,0); ground.position.y = -0.5; return; }
+    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,minZ=1e9,maxZ=-1e9;
+    blocks.forEach(b=>{ minX=Math.min(minX,b.x);maxX=Math.max(maxX,b.x);
+      minY=Math.min(minY,b.y);maxY=Math.max(maxY,b.y);minZ=Math.min(minZ,b.z);maxZ=Math.max(maxZ,b.z); });
+    const cx=(minX+maxX)/2, cz=(minZ+maxZ)/2;
+    const maxDim = Math.max(maxX-minX, maxY-minY, maxZ-minZ) + 1;
+    const s = 1.6 / maxDim;               // マーカー幅(約1)の1.6倍に収める
+    build.scale.setScalar(s);
+    // X/Z中心をマーカー中央へ、最下段の底(minY-0.5)をマーカー面(y=0)へ
+    build.position.set(-cx*s, -(minY-0.5)*s, -cz*s);
+    ground.position.y = minY - 0.5;       // 床は最下段の高さ（build内ローカル）
+  }
+  function updateCount(){ countEl.textContent = meshes.length; }
+
+  // ---- タップで追加/削除 ----
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let downX=0, downY=0, moved=false;
+
+  function getCanvas(){ return sceneEl.canvas; }
+  window.addEventListener('pointerdown', e=>{ downX=e.clientX; downY=e.clientY; moved=false; }, true);
+  window.addEventListener('pointermove', e=>{ if(Math.abs(e.clientX-downX)>10||Math.abs(e.clientY-downY)>10) moved=true; }, true);
+  window.addEventListener('pointerup', e=>{
+    if (moved) return;
+    if (e.target.closest('.top') || e.target.closest('#guide')) return;  // UI操作は除外
+    onTap(e.clientX, e.clientY);
+  }, true);
+
+  function onTap(cx, cy){
+    if (!build) return;
+    const cam = sceneEl.camera;
+    const r = getCanvas().getBoundingClientRect();
+    ndc.x = ((cx - r.left)/r.width)*2 - 1;
+    ndc.y = -((cy - r.top)/r.height)*2 + 1;
+    raycaster.setFromCamera(ndc, cam);
+    const hits = raycaster.intersectObjects([ground, ...meshes], false);
+    if (!hits.length) return;
+    const h = hits[0];
+    if (mode === 'make'){
+      let gx, gy, gz;
+      if (h.object === ground){
+        const lp = build.worldToLocal(h.point.clone());     // build内グリッド座標
+        gx = Math.round(lp.x); gy = Math.round(ground.position.y + 0.5); gz = Math.round(lp.z);
+      } else {
+        const n = h.face.normal;                            // 面の法線（ローカル）
+        const p = h.object.position;
+        gx = Math.round(p.x + n.x); gy = Math.round(p.y + n.y); gz = Math.round(p.z + n.z);
+      }
+      place(gx, gy, gz);
+    } else {
+      if (h.object !== ground) remove(h.object);
+    }
+  }
+  function place(x,y,z){
+    if (occ.has(key(x,y,z))) return;
+    blocks.push({x,y,z}); addMesh(x,y,z);
+    fit(); updateCount(); saveBlocks();
+  }
+  function remove(m){
+    const p = m.position;
+    blocks = blocks.filter(b=> !(b.x===p.x && b.y===p.y && b.z===p.z));
+    build.remove(m); m.material.dispose();
+    meshes = meshes.filter(x=>x!==m); occ.delete(key(p.x,p.y,p.z));
+    fit(); updateCount(); saveBlocks();
+  }
+
+  // ---- UI ----
+  document.getElementById('back').onclick = ()=>{ location.href = './mock.html'; };
+  const mMake = document.getElementById('mMake'), mErase = document.getElementById('mErase');
+  mMake.onclick = ()=>{ mode='make'; mMake.className='on make'; mErase.className=''; };
+  mErase.onclick = ()=>{ mode='erase'; mErase.className='on erase'; mMake.className=''; };
+</script>
+</body>
+</html>

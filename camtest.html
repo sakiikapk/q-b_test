@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>カメラテスト（AR前チェック）</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;margin:0;background:#0b0f18;color:#fff;
+    text-align:center;display:flex;flex-direction:column;min-height:100vh}
+  #msg{padding:14px;font-weight:800;font-size:15px;line-height:1.5}
+  video{flex:1 1;width:100%;object-fit:cover;background:#000}
+  button{font-size:18px;padding:16px 26px;margin:16px auto;border:0;border-radius:14px;
+    background:#10b981;color:#fff;font-weight:900;cursor:pointer;max-width:90vw}
+  .ok{color:#34d399}.ng{color:#fb7185}
+  code{background:rgba(255,255,255,.12);padding:2px 6px;border-radius:6px;font-size:13px}
+</style>
+</head>
+<body>
+  <div id="msg">「カメラ開始」を押してね。<br>背面カメラの映像が出ればAR準備OKです。</div>
+  <button id="go">📷 カメラ開始</button>
+  <video id="v" autoplay playsinline muted></video>
+<script>
+  const v = document.getElementById('v');
+  const msg = document.getElementById('msg');
+
+  // 事前チェック：セキュアコンテキスト（https）か？
+  if (!window.isSecureContext){
+    msg.innerHTML = '<span class="ng">❌ 安全な接続(https)ではありません。</span><br>'
+      + 'カメラはhttpsでしか使えません。<br>URLが <code>https://</code> で始まっているか確認してね。';
+  }
+
+  document.getElementById('go').onclick = async ()=>{
+    msg.textContent = 'カメラ起動中…';
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }, audio: false
+      });
+      v.srcObject = stream;
+      msg.innerHTML = '<span class="ok">✅ カメラOK！</span><br>このままARに進めます。';
+    }catch(e){
+      msg.innerHTML = '<span class="ng">❌ ' + e.name + '</span><br>' + e.message
+        + '<br><br>証明書を信頼済みか／https接続かを確認してね。';
+    }
+  };
+</script>
+</body>
+</html>

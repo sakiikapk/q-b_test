@@ -9,7 +9,14 @@ Untitled-1
 
 # 実行時に溜まる送信データ（子どもの作品＝リポジトリに入れない）
 submissions/
+# AR用USDZの一時ファイル
+ar_tmp/
 *.log
+
+# 自己署名証明書（端末ごとに生成・秘密鍵は絶対にコミットしない）
+cert.pem
+key.pem
+.cert_ip
 
 # 配布用zip
 *.zip

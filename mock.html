@@ -103,7 +103,10 @@
 <div class="page">
   <header class="topHeader">
     <div class="title">Q-BU <span style="font-weight:700;font-size:12px;color:var(--muted)">スマホ操作モック</span></div>
-    <button class="hbtn primary" id="sendBtn">送信</button>
+    <div style="display:flex;gap:8px">
+      <button class="hbtn" id="arBtn">ARで見る</button>
+      <button class="hbtn primary" id="sendBtn">送信</button>
+    </div>
   </header>
   <div class="main">
     <canvas id="cv"></canvas>
@@ -163,7 +166,7 @@ const CONFIG = {
   palette: ["#9AA0A6"],          // 複数色 → この配列を増やすだけ
   features: {                    // 機能フラグ（今は最小。trueにして実装を足す）
     multiColor: false, textures: false, background: false,
-    ar: false, posting: false, coding: false, gallery: false,
+    ar: true, posting: false, coding: false, gallery: false,
     undo: false, selectRegion: false
   },
   limits: { maxBlocks: 100000, bounds: [100, 100, 100] },
@@ -257,7 +260,12 @@ function removeVoxel(m){
   meshes = meshes.filter(x=>x!==m);
   updateCount();
 }
-function updateCount(){ countEl.textContent = meshes.length; }
+function updateCount(){ countEl.textContent = meshes.length; saveBlocks(); }
+// 作品をlocalStorageに自動保存（同一オリジンのAR編集ページ ar.html が読む／途中復元の土台）
+function saveBlocks(){
+  try{ localStorage.setItem('qbu_blocks',
+    JSON.stringify(meshes.map(m=>({ x:m.position.x, y:m.position.y, z:m.position.z })))); }catch(_){}
+}
 function clearAll(){ [...meshes].forEach(removeVoxel); }
 function seed(){
   clearAll();
@@ -424,6 +432,11 @@ sendBtn.onclick = async ()=>{
     sendBtn.disabled = false; sendBtn.textContent = '送信';
   }
 };
+
+// ---- AR編集へ（マーカーAR：ar.html。作品を保存してから遷移＝同一オリジンで受け渡し）----
+const arBtn = document.getElementById('arBtn');
+if (!CONFIG.features.ar) arBtn.style.display = 'none';   // 機能ゲート（CONFIGで出し分け）
+arBtn.onclick = ()=>{ saveBlocks(); location.href = './ar.html'; };
 
 // ---- ループ・リサイズ ----
 function resize(){
