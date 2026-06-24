@@ -114,10 +114,49 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(403, "forbidden"); return       # 秘密鍵は絶対に渡さない
         if path == "/lan":
             ip = lan_ip()
-            self._json(200, {"ip": ip, "port": PORT, "scheme": SCHEME,
-                             "appUrl": "%s://%s:%d/mock.html" % (SCHEME, ip, PORT)})
+            # アクセスに使われたHostを優先（トンネル経由なら外部ドメイン）＝QRが実アクセス先と一致する
+            host = self.headers.get("Host") or ("%s:%d" % (ip, PORT))
+            host_name = host.split(":")[0]
+            self_signed = host_name.replace(".", "").isdigit() or host_name == "localhost"
+            self._json(200, {"ip": ip, "port": PORT, "scheme": SCHEME, "host": host,
+                             "selfSigned": self_signed,
+                             "appUrl": "%s://%s/mock.html" % (SCHEME, host)})
+            return
+        if path == "/list":
+            self._do_list()
             return
         super().do_GET()
+
+    def _do_list(self):
+        """受信済み作品の一覧（新しい順）を返す。data.html（ホスト確認画面）が使う。
+        ファイル本体は読みつつ、一覧では要約だけ返す（中身は /submissions/<file> で個別取得）。"""
+        items = []
+        for fn in os.listdir(SAVE_DIR):
+            if not fn.endswith(".json"):
+                continue
+            fp = os.path.join(SAVE_DIR, fn)
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    d = json.load(f)
+            except Exception:
+                continue
+            blocks = (d.get("model") or {}).get("blocks", d.get("blocks", []))
+            creator = d.get("creator") or {}
+            meta = d.get("meta") or {}
+            colors = sorted({b.get("color") for b in blocks if isinstance(b, dict) and b.get("color")}) \
+                     if isinstance(blocks, list) else []
+            items.append({
+                "file": fn,
+                "id": creator.get("id", d.get("id", "?")),
+                "name": creator.get("name", ""),
+                "mode": meta.get("mode", ""),
+                "createdAt": meta.get("createdAt", ""),
+                "blocks": len(blocks) if isinstance(blocks, list) else 0,
+                "colors": colors,
+                "mtime": os.path.getmtime(fp),
+            })
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+        self._json(200, {"count": len(items), "dir": "submissions/", "items": items})
 
     def _json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -152,6 +191,9 @@ if __name__ == "__main__":
     print()
     print("  ▼ 子ども用（QRを読むとここが開く / 直接入力もOK）")
     print("      %s://%s:%d/mock.html" % (SCHEME, ip, PORT))
+    print()
+    print("  ▼ ホスト確認（受信データを一覧・3Dプレビュー）")
+    print("      %s://%s:%d/data.html" % (SCHEME, ip, PORT))
     if SCHEME == "https":
         print()
         print("  ▼ カメラAR用：iPhoneで最初に証明書をインストール")

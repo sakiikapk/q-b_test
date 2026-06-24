@@ -71,12 +71,15 @@ async function load(){
     qr.addData(appUrl);
     qr.make();
     qrEl.innerHTML = qr.createSvgTag({ scalable:true });
-    // https配信時だけ、証明書インストール導線を出す（カメラAR用）
-    if (info.scheme === 'https'){
-      const certUrl = info.scheme + '://' + info.ip + ':' + info.port + '/cert.pem';
+    // 自己署名(LAN直)のときだけ、証明書インストール導線を出す。
+    // トンネル経由(info.selfSigned=false)は本物の証明書なので導線は不要。
+    if (info.selfSigned){
+      const certUrl = info.scheme + '://' + info.host + '/cert.pem';
       const link = document.getElementById('certLink');
       link.href = certUrl; link.textContent = certUrl;
       document.getElementById('certNote').style.display = 'block';
+    } else {
+      document.getElementById('certNote').style.display = 'none';
     }
   }catch(err){
     urlEl.textContent = '―';

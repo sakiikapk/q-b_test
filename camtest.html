@@ -23,23 +23,40 @@
   const v = document.getElementById('v');
   const msg = document.getElementById('msg');
 
-  // 事前チェック：セキュアコンテキスト（https）か？
+  // 事前チェック：セキュアコンテキスト（https / localhost）か？
   if (!window.isSecureContext){
     msg.innerHTML = '<span class="ng">❌ 安全な接続(https)ではありません。</span><br>'
-      + 'カメラはhttpsでしか使えません。<br>URLが <code>https://</code> で始まっているか確認してね。';
+      + 'URLが <code>https://</code> で始まっているか確認してね。';
+  }
+  // VS Code等の内蔵ブラウザはカメラ非対応のことが多い→注意喚起
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    msg.innerHTML = '<span class="ng">❌ このブラウザはカメラAPI非対応。</span><br>'
+      + 'Safari か Chrome で開いてね（VS Codeの内蔵ブラウザは不可）。';
   }
 
   document.getElementById('go').onclick = async ()=>{
     msg.textContent = 'カメラ起動中…';
     try{
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }, audio: false
-      });
+      // まず「どのカメラでもいい」で取得（テストなので最も通りやすく）
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       v.srcObject = stream;
-      msg.innerHTML = '<span class="ok">✅ カメラOK！</span><br>このままARに進めます。';
+      await v.play().catch(()=>{});           // Safari対策：明示的にplay
+      const track = stream.getVideoTracks()[0];
+      setTimeout(()=>{
+        const w = v.videoWidth, h = v.videoHeight;
+        if (w > 0){
+          msg.innerHTML = '<span class="ok">✅ 映像取得 ' + w + '×' + h + '</span><br>'
+            + 'カメラ: ' + (track ? track.label : '?') + '<br>'
+            + '↑映像が見えていればAR OK。黒いままなら内蔵ブラウザの可能性大（Safari/Chromeで開く）';
+        }else{
+          msg.innerHTML = '<span class="ng">⚠️ ストリームは来たが映像サイズ0</span><br>'
+            + 'カメラ: ' + (track ? track.label : '?') + '<br>'
+            + 'VS Code内蔵ブラウザか、他アプリがカメラ使用中の可能性。Safari/Chromeで開いてね。';
+        }
+      }, 900);
     }catch(e){
       msg.innerHTML = '<span class="ng">❌ ' + e.name + '</span><br>' + e.message
-        + '<br><br>証明書を信頼済みか／https接続かを確認してね。';
+        + '<br><br>Safari/Chromeで開く＋macOSのカメラ権限を確認してね。';
     }
   };
 </script>

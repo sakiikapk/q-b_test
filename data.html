@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Q-BU 受信データ（ホスト確認）</title>
+<style>
+  :root{ --bg:#f7f8fb; --text:#0b0f18; --muted:rgba(11,15,24,.55);
+         --border:rgba(11,15,24,.14); --accent:#10b981; --card:#fff; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;}
+  body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  header{display:flex;align-items:center;gap:14px;padding:13px 18px;background:#fff;
+    border-bottom:1px solid var(--border);flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;font-weight:1000;letter-spacing:.03em}
+  .stat{color:var(--muted);font-weight:800;font-size:13px}
+  .stat b{color:var(--text);font-size:16px}
+  code{background:rgba(11,15,24,.07);padding:2px 6px;border-radius:6px;font-size:12px}
+  .live{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.5)}70%{box-shadow:0 0 0 8px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
+  button{appearance:none;cursor:pointer;border:1px solid var(--border);background:#fff;
+    padding:8px 14px;border-radius:12px;font-weight:900;font-size:13px;color:inherit}
+  button:active{transform:scale(.98)}
+  main{flex:1;display:flex;min-height:0}
+  /* 左：一覧 */
+  #list{width:min(360px,42vw);border-right:1px solid var(--border);overflow:auto;padding:12px;background:#fbfcfe}
+  .item{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:11px 13px;margin-bottom:10px;cursor:pointer}
+  .item:hover{border-color:rgba(16,185,129,.55)}
+  .item.on{border-color:var(--accent);box-shadow:0 0 0 2px rgba(16,185,129,.18)}
+  .item.new{animation:flash 1.8s ease-out}
+  @keyframes flash{0%{background:rgba(16,185,129,.20)}100%{background:var(--card)}}
+  .item .id{font-weight:1000;font-size:16px}
+  .item .sub{color:var(--muted);font-weight:800;font-size:12px;margin-top:3px}
+  .swatches{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+  .sw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.15)}
+  .badge{display:inline-block;background:var(--accent);color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:1000;margin-left:7px;vertical-align:2px}
+  .empty{color:var(--muted);font-weight:800;text-align:center;padding:44px 12px;line-height:1.8}
+  /* 右：詳細 */
+  #detail{flex:1;display:flex;flex-direction:column;min-width:0}
+  #previewWrap{flex:1;position:relative;background:linear-gradient(180deg,#eef1f6,#dde3ec);min-height:0}
+  #preview{width:100%;height:100%;display:block;touch-action:none}
+  #phint{position:absolute;left:12px;bottom:10px;color:var(--muted);font-weight:800;font-size:12px;pointer-events:none}
+  #meta{padding:11px 16px;border-top:1px solid var(--border);background:#fff;font-weight:800;font-size:13px;
+    display:flex;gap:18px;flex-wrap:wrap;align-items:center}
+  #meta .k{color:var(--muted);margin-right:4px}
+  details{border-top:1px solid var(--border);background:#fff}
+  summary{padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;color:var(--muted)}
+  pre{margin:0;padding:0 16px 16px;font-size:12px;line-height:1.5;max-height:30vh;overflow:auto}
+  a.dl{color:var(--accent);font-weight:1000;text-decoration:none}
+  @media(max-width:680px){
+    main{flex-direction:column}
+    #list{width:100%;max-height:40vh;border-right:none;border-bottom:1px solid var(--border)}
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/three.module.js",
+  "three/addons/": "./vendor/three/addons/"
+}}
+</script>
+</head>
+<body>
+  <header>
+    <h1>Q-BU 受信データ</h1>
+    <span class="stat"><b id="count">0</b> 件</span>
+    <span class="stat">保存先 <code id="dir">submissions/</code></span>
+    <button id="refresh">いま更新</button>
+    <span class="live"><span class="dot"></span>自動更新中（3秒ごと）</span>
+  </header>
+  <main>
+    <div id="list"><div class="empty">読み込み中…</div></div>
+    <div id="detail">
+      <div id="previewWrap">
+        <canvas id="preview"></canvas>
+        <div id="phint">ドラッグで回転・ピンチ/ホイールでズーム</div>
+      </div>
+      <div id="meta"><span class="k">作品を選ぶと、ここに詳細が出ます</span></div>
+      <details>
+        <summary>生JSONを見る</summary>
+        <pre id="raw">―</pre>
+      </details>
+    </div>
+  </main>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const listEl  = document.getElementById('list');
+const countEl = document.getElementById('count');
+const dirEl   = document.getElementById('dir');
+const metaEl  = document.getElementById('meta');
+const rawEl   = document.getElementById('raw');
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const isHex = c => typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c);
+
+// ---- Three.js プレビュー（mock.html と同じローカル同梱Three.jsを再利用）----
+const canvas = document.getElementById('preview');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 2000);
+camera.position.set(6, 6, 8);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.15));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(4, 8, 6); scene.add(sun);
+const group = new THREE.Group(); scene.add(group);
+const grid = new THREE.GridHelper(40, 40, 0xbcc4d0, 0xd6dbe4); scene.add(grid);
+const boxGeo  = new THREE.BoxGeometry(0.96, 0.96, 0.96);
+const edgeGeo = new THREE.EdgesGeometry(boxGeo);
+const edgeMat = new THREE.LineBasicMaterial({ color:0x0b0f18, transparent:true, opacity:0.18 });
+
+function resize(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas);
+resize();
+(function tick(){ controls.update(); renderer.render(scene, camera); requestAnimationFrame(tick); })();
+
+function clearGroup(){
+  while (group.children.length){
+    const c = group.children.pop();
+    if (c.material) c.material.dispose?.();   // 立方体ごとの材質だけ破棄（geo/edgeは共有）
+  }
+}
+function showModel(blocks){
+  clearGroup();
+  if (!Array.isArray(blocks) || !blocks.length){ grid.position.y = 0; return; }
+  let mnX=Infinity,mxX=-Infinity,mnY=Infinity,mxY=-Infinity,mnZ=Infinity,mxZ=-Infinity;
+  blocks.forEach(b=>{
+    mnX=Math.min(mnX,b.x);mxX=Math.max(mxX,b.x);
+    mnY=Math.min(mnY,b.y);mxY=Math.max(mxY,b.y);
+    mnZ=Math.min(mnZ,b.z);mxZ=Math.max(mxZ,b.z);
+  });
+  const cx=(mnX+mxX)/2, cy=(mnY+mxY)/2, cz=(mnZ+mxZ)/2;
+  blocks.forEach(b=>{
+    const mat = new THREE.MeshStandardMaterial({ color: isHex(b.color)? b.color : '#9AA0A6', roughness:0.85 });
+    const m = new THREE.Mesh(boxGeo, mat);
+    m.position.set(b.x-cx, b.y-cy, b.z-cz);
+    m.add(new THREE.LineSegments(edgeGeo, edgeMat));
+    group.add(m);
+  });
+  grid.position.y = (mnY - cy) - 0.5;
+  const span = Math.max(mxX-mnX, mxY-mnY, mxZ-mnZ, 1) + 2.5;
+  controls.target.set(0, 0, 0);
+  camera.position.set(span*0.9, span*0.85, span*1.15);
+  controls.update();
+}
+
+// ---- データ取得・一覧描画 ----
+let selected = null;
+let seen = new Set();
+let first = true;
+
+function fmtTime(iso, mtime){
+  const d = iso ? new Date(iso) : (mtime ? new Date(mtime*1000) : null);
+  if (!d || isNaN(d)) return '';
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+async function refresh(){
+  let data;
+  try { data = await (await fetch('/list', {cache:'no-store'})).json(); }
+  catch(_){ return; }
+  countEl.textContent = data.count;
+  dirEl.textContent = data.dir;
+  if (!data.items || !data.items.length){
+    listEl.innerHTML = '<div class="empty">まだ受信データがありません。<br>子ども用アプリで「送信」すると、ここに出ます。</div>';
+    seen = new Set(); selected = null; first = false; return;
+  }
+  listEl.innerHTML = '';
+  data.items.forEach(it=>{
+    const isNew = !first && !seen.has(it.file);
+    const el = document.createElement('div');
+    el.className = 'item' + (it.file===selected?' on':'') + (isNew?' new':'');
+    el.dataset.file = it.file;
+    const sw = (it.colors||[]).filter(isHex).slice(0,10)
+      .map(c=>`<span class="sw" style="background:${c}"></span>`).join('');
+    el.innerHTML =
+      `<div class="id">${esc(it.id)||'?'}${isNew?'<span class="badge">NEW</span>':''}</div>` +
+      `<div class="sub">${fmtTime(it.createdAt, it.mtime)} ・ ブロック ${it.blocks} ・ ${esc(it.mode)||'model'}</div>` +
+      (sw ? `<div class="swatches">${sw}</div>` : '');
+    el.onclick = ()=> select(it.file);
+    listEl.appendChild(el);
+  });
+  seen = new Set(data.items.map(i=>i.file));
+  first = false;
+  // 選択が無い／消えたら最新を自動選択
+  if (!selected || !data.items.some(i=>i.file===selected)) select(data.items[0].file);
+}
+
+async function select(file){
+  selected = file;
+  document.querySelectorAll('.item').forEach(e=> e.classList.toggle('on', e.dataset.file===file));
+  let d;
+  try { d = await (await fetch('/submissions/'+encodeURIComponent(file), {cache:'no-store'})).json(); }
+  catch(_){ metaEl.innerHTML = '<span class="k">読み込みに失敗しました</span>'; return; }
+  const blocks  = (d.model && d.model.blocks) || d.blocks || [];
+  const creator = d.creator || {};
+  const meta    = d.meta || {};
+  metaEl.innerHTML =
+    `<span><span class="k">作者</span><b>${esc(creator.id)||'?'}</b>${creator.name?(' / '+esc(creator.name)):''}</span>` +
+    `<span><span class="k">ブロック</span><b>${blocks.length}</b></span>` +
+    `<span><span class="k">モード</span>${esc(meta.mode)||'-'}</span>` +
+    `<span><span class="k">作成</span>${fmtTime(meta.createdAt)}</span>` +
+    `<span><a class="dl" href="/submissions/${encodeURIComponent(file)}" download>JSONを保存</a></span>`;
+  rawEl.textContent = JSON.stringify(d, null, 2);
+  showModel(blocks);
+}
+
+document.getElementById('refresh').onclick = refresh;
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

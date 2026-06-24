@@ -27,8 +27,14 @@
     background:rgba(0,0,0,.6);color:#fff;border-radius:14px;padding:12px 18px;font-weight:800;font-size:14px;
     text-align:center;line-height:1.5;max-width:90vw}
   #guide.hide{display:none}
-  /* AR.jsが作るvideo/canvasを画面いっぱいに */
-  .a-canvas, video, .arjs-video{position:fixed!important;top:0;left:0;width:100%!important;height:100%!important;object-fit:cover}
+  /* カメラ映像(video)と3D(canvas)を「同一の拡縮」で画面いっぱいに（重なりズレ・立方体の歪み対策）。*/
+  /* AR.jsはvideoを z-index:-2 で置く→黒背景の裏に回って真っ黒になるので前面側へ上書き。*/
+  #arjs-video, .arjs-video, video, .a-canvas{
+    position:fixed!important;top:0!important;left:0!important;
+    width:100%!important;height:100%!important;
+    object-fit:cover!important;transform:translateZ(0)}   /* 両方coverで同じ拡縮→立方体が保たれ位置も合う */
+  #arjs-video, .arjs-video, video{z-index:0!important}             /* カメラ映像：奥 */
+  .a-canvas{z-index:1!important;background:transparent!important}   /* 3D：手前・透過 */
 </style>
 <script src="./vendor/arjs/aframe.min.js"></script>
 <script src="./vendor/arjs/aframe-ar.js"></script>
@@ -61,12 +67,14 @@
   const countEl = document.getElementById('count');
   const guide = document.getElementById('guide');
 
-  const CUBE = 1;                 // ローカル(グリッド)単位。最後にrootを拡縮してマーカーに収める
   const COLOR = 0x9AA0A6;
+  const FIT_SCALE = 0.5;          // 1ブロック=マーカーの約0.5倍の「固定サイズ」。作品が大きくなっても縮まない（調整可）
+  const LIMIT = 30;               // 作品の最大サイズ（各軸30マスまで）。これ以上は大きくできない
+  const FOUND_MSG = '✅ でたよ！ ブロックの<b>面をタップ</b>でくっつく ／ 「けす」でけせる';
   let mode = 'make';
 
   // マーカー空間に置く描画ツリー
-  let root = null, build = null, ground = null;
+  let root = null, build = null;
   let meshes = [];                // 立方体メッシュ
   const occ = new Map();          // "x,y,z" -> mesh（重複・削除用）
   let blocks = [];                // {x,y,z} の配列（保存用の真実）
@@ -83,21 +91,20 @@
     // ライト（AR.jsはライトを足さないので自前で）
     root.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
     const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(2,4,3); root.add(dir);
-    // タップ用の床（不可視でもraycastは当たる）
-    ground = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshBasicMaterial({visible:false}));
-    ground.rotation.x = -Math.PI/2; build.add(ground);
-
     loadBlocks();
     rebuild();
   });
 
-  markerEl.addEventListener('markerFound', ()=> guide.classList.add('hide'));
-  markerEl.addEventListener('markerLost',  ()=> guide.classList.remove('hide'));
+  markerEl.addEventListener('markerFound', ()=>{ guide.innerHTML = FOUND_MSG; });
+  markerEl.addEventListener('markerLost',  ()=>{
+    guide.innerHTML = 'マーカーを カメラに うつしてね 🟦';
+  });
 
   // ---- データ ----
   function loadBlocks(){
     try{ blocks = JSON.parse(localStorage.getItem('qbu_blocks') || '[]'); }catch(_){ blocks = []; }
     if (!Array.isArray(blocks)) blocks = [];
+    if (blocks.length === 0) blocks = [{x:0,y:0,z:0}];   // 空なら起点キューブ1個から（ここに面をくっつけていく）
   }
   function saveBlocks(){
     try{ localStorage.setItem('qbu_blocks', JSON.stringify(blocks)); }catch(_){}
@@ -119,23 +126,19 @@
     build.add(m); meshes.push(m); occ.set(key(x,y,z), m);
     return m;
   }
-  // 作品を中心化＆マーカーサイズに拡縮（buildのposition/scaleで調整）
+  // 固定サイズ（縮まない）＋ X/Z中心をマーカー中央へ・最下段をマーカー面へ
   function fit(){
-    if (!blocks.length){ build.scale.setScalar(0.5); build.position.set(0,0,0); ground.position.y = -0.5; return; }
-    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,minZ=1e9,maxZ=-1e9;
+    build.scale.setScalar(FIT_SCALE);
+    if (!blocks.length){ build.position.set(0,0,0); return; }
+    let minX=1e9,maxX=-1e9,minY=1e9,minZ=1e9,maxZ=-1e9;
     blocks.forEach(b=>{ minX=Math.min(minX,b.x);maxX=Math.max(maxX,b.x);
-      minY=Math.min(minY,b.y);maxY=Math.max(maxY,b.y);minZ=Math.min(minZ,b.z);maxZ=Math.max(maxZ,b.z); });
+      minY=Math.min(minY,b.y);minZ=Math.min(minZ,b.z);maxZ=Math.max(maxZ,b.z); });
     const cx=(minX+maxX)/2, cz=(minZ+maxZ)/2;
-    const maxDim = Math.max(maxX-minX, maxY-minY, maxZ-minZ) + 1;
-    const s = 1.6 / maxDim;               // マーカー幅(約1)の1.6倍に収める
-    build.scale.setScalar(s);
-    // X/Z中心をマーカー中央へ、最下段の底(minY-0.5)をマーカー面(y=0)へ
-    build.position.set(-cx*s, -(minY-0.5)*s, -cz*s);
-    ground.position.y = minY - 0.5;       // 床は最下段の高さ（build内ローカル）
+    build.position.set(-cx*FIT_SCALE, -(minY-0.5)*FIT_SCALE, -cz*FIT_SCALE);
   }
   function updateCount(){ countEl.textContent = meshes.length; }
 
-  // ---- タップで追加/削除 ----
+  // ---- タップで追加/削除（追加は「既存ブロックの面にくっつく」だけ＝床置き・浮きナシ）----
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   let downX=0, downY=0, moved=false;
@@ -150,32 +153,39 @@
   }, true);
 
   function onTap(cx, cy){
-    if (!build) return;
+    if (!build || !meshes.length) return;
     const cam = sceneEl.camera;
     const r = getCanvas().getBoundingClientRect();
     ndc.x = ((cx - r.left)/r.width)*2 - 1;
     ndc.y = -((cy - r.top)/r.height)*2 + 1;
     raycaster.setFromCamera(ndc, cam);
-    const hits = raycaster.intersectObjects([ground, ...meshes], false);
+    const hits = raycaster.intersectObjects(meshes, false);   // ブロックだけ（床なし）＝面をタップした時だけ反応
     if (!hits.length) return;
     const h = hits[0];
     if (mode === 'make'){
-      let gx, gy, gz;
-      if (h.object === ground){
-        const lp = build.worldToLocal(h.point.clone());     // build内グリッド座標
-        gx = Math.round(lp.x); gy = Math.round(ground.position.y + 0.5); gz = Math.round(lp.z);
-      } else {
-        const n = h.face.normal;                            // 面の法線（ローカル）
-        const p = h.object.position;
-        gx = Math.round(p.x + n.x); gy = Math.round(p.y + n.y); gz = Math.round(p.z + n.z);
-      }
-      place(gx, gy, gz);
+      const n = h.face.normal;                                // タップした面の向き
+      const p = h.object.position;
+      place(Math.round(p.x + n.x), Math.round(p.y + n.y), Math.round(p.z + n.z));  // 面にくっつけて1個追加
     } else {
-      if (h.object !== ground) remove(h.object);
+      remove(h.object);
     }
+  }
+  // 各軸の広がりが LIMIT(30マス) を超える置き方は禁止＝作品サイズの上限
+  function withinLimit(x,y,z){
+    let mnX=x,mxX=x,mnY=y,mxY=y,mnZ=z,mxZ=z;
+    blocks.forEach(b=>{ mnX=Math.min(mnX,b.x);mxX=Math.max(mxX,b.x);
+      mnY=Math.min(mnY,b.y);mxY=Math.max(mxY,b.y);mnZ=Math.min(mnZ,b.z);mxZ=Math.max(mxZ,b.z); });
+    return (mxX-mnX+1)<=LIMIT && (mxY-mnY+1)<=LIMIT && (mxZ-mnZ+1)<=LIMIT;
+  }
+  let guideTimer = null;
+  function flashGuide(msg){                       // 一時メッセージ→1.3秒後に通常案内へ戻す
+    guide.innerHTML = msg;
+    clearTimeout(guideTimer);
+    guideTimer = setTimeout(()=>{ guide.innerHTML = FOUND_MSG; }, 1300);
   }
   function place(x,y,z){
     if (occ.has(key(x,y,z))) return;
+    if (!withinLimit(x,y,z)){ flashGuide('これ以上は 大きくできないよ（30マスまで）'); return; }
     blocks.push({x,y,z}); addMesh(x,y,z);
     fit(); updateCount(); saveBlocks();
   }
@@ -184,7 +194,9 @@
     blocks = blocks.filter(b=> !(b.x===p.x && b.y===p.y && b.z===p.z));
     build.remove(m); m.material.dispose();
     meshes = meshes.filter(x=>x!==m); occ.delete(key(p.x,p.y,p.z));
-    fit(); updateCount(); saveBlocks();
+    if (!blocks.length){ blocks = [{x:0,y:0,z:0}]; rebuild(); }  // 全部消えたら起点を復活（面が無くて詰むのを防ぐ）
+    else { fit(); updateCount(); }
+    saveBlocks();
   }
 
   // ---- UI ----
@@ -192,6 +204,12 @@
   const mMake = document.getElementById('mMake'), mErase = document.getElementById('mErase');
   mMake.onclick = ()=>{ mode='make'; mMake.className='on make'; mErase.className=''; };
   mErase.onclick = ()=>{ mode='erase'; mErase.className='on erase'; mMake.className=''; };
+
+  // ---- iOSの黒画面対策＆切り分け：AR.jsのvideoを確実に再生し、状態を表示 ----
+  function arVideo(){ return document.querySelector('#arjs-video') || document.querySelector('video'); }
+  function tryPlayVideo(){ const v = arVideo(); if (v && v.paused) v.play().catch(()=>{}); }
+  window.addEventListener('arjs-video-loaded', tryPlayVideo);   // AR.jsがvideo準備完了で発火
+  window.addEventListener('pointerup', tryPlayVideo, true);     // 最初のタップでも再生を後押し
 </script>
 </body>
 </html>
